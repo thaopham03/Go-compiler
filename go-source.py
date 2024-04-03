@@ -63,6 +63,13 @@ def t_INTEGER(t):
     t.value = int(t.value)
     return t
 
+# floating points literals:
+
+def t_FLOAT(t):
+    r'\d+\.\d+'
+    t.value = float(t.value)
+    return t
+
 # string literals:
 
 def t_STRING(t):
@@ -77,6 +84,32 @@ def t_RAWSTRING(t):
     t.value = t.value[1:-1] # remove the back quotes
     return t
 
+def t_HEX(t):
+    r'0[xX][0-9a-fA-F]+'
+    t.value = int(t.value, 16)  # Convert to integer from hex
+    return t
+
+def t_OCTAL(t):
+    r'0[oO][0-7]+'
+    t.value = int(t.value, 8)  # Convert to integer from octal
+    return t
+
+def t_RUNE(t):
+    r'\'(\\[abfnrtv\\\'"]|\\[0-7]{1,3}|\\x[0-9a-fA-F]{1,2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|[^\\\'\n])\''
+    t.value = t.value[1:-1]  # Strip the single quotes
+    return t
+
+# characters to ignore as whitespace
+t_ignore = " \t\v\f"
+
+# noinspection PySingleQuotedDocstring
+def t_newline(t):
+   r'\n+'
+   t.lexer.lineno += t.value.count("\n")
+
+def t_error(t):
+   print("Illegal character '%s'" % t.value[0])
+   t.lexer.skip(1)
 
 # See sections 4.11 - Building and using the lexer - https://www.dabeaz.com/ply/ply.html
 # Build the lexer
