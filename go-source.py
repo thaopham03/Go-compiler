@@ -27,33 +27,22 @@ from Stack import Stack             # a simple stack class
 # ------------------------------------------------ STEP 2: SET UP LEXER
 
 reserved = {
-    "package" : "PACKAGE", # reserved word to define the package name
-    "import" : "IMPORT",   # reserved word to import packages
     "if" : "IF",
     "else" : "ELSE",
     "for" : "FOR",
-    "goto" : "GOTO", # reserved word to jump to a label
     "Print" : "PRINT", # reserved word to print to standard output
     "Println" : "PRINTLN", # reserved word to print to standard output with a newline
     "Printf" : "PRINTF", # reserved word to print to standard output with format
-    "int" : "INT", # reserved word to declare an integer type
-    "string" : "STRING", # reserved word to declare a string type
-    "float" : "FLOAT", # reserved word to declare a floating-point type
 }
 
 tokens = [
-    'FLOAT',
     'STRING', # Interpreted string literals are character sequences between double quotes, as in "bar". Within the quotes, any character may appear except newline and unescaped double quote. 
-    'RUNE', 
-    'HEX',
-    'RAWSTRING', # character sequences between back quotes, such as 'foo'.
-    'OCTAL',
+    'NUMBER', # number literals
     'PLUS', # binary operator expression PLUS
     'MINUS', # binary operator expression MINUS
     'TIMES', # binary operator expression TIMES
     'DIVIDE', # binary operator expression DIVIDE
     'MOD', # # binary operator expression MOD
-    'NUMBER',
     'LT', 'LE', 'EQ', 'NEQ', 'GE', 'GT', 'UMINUS'
 ]
 
@@ -73,12 +62,17 @@ def string_to_number(s):
 
 # DEFINE TOKENS PATTERNS
 
-# integer literals:
-
-def t_NUMBER(t):
-    r'\d+'
-    t.value = int(t.value)
+def t_PRINT(t):
+    r'Print'
     return t
+
+def t_PRINTLN(t):
+    r'Println'
+    return t
+
+def t_PRINTF(t):
+    r'Printf'
+    return t 
 
 # floating points literals:
 
@@ -92,28 +86,6 @@ def t_FLOAT(t):
 def t_STRING(t):
     r'"(\\.|[^\\"])*"'
     t.value = t.value[1:-1] # remove the double quotes
-    return t
-
-# raw string literals:
-
-def t_RAWSTRING(t):
-    r'`[^`]*`'
-    t.value = t.value[1:-1] # remove the back quotes
-    return t
-
-def t_HEX(t):
-    r'0[xX][0-9a-fA-F]+'
-    t.value = int(t.value, 16)  # Convert to integer from hex
-    return t
-
-def t_OCTAL(t):
-    r'0[oO][0-7]+'
-    t.value = int(t.value, 8)  # Convert to integer from octal
-    return t
-
-def t_RUNE(t):
-    r'\'(\\[abfnrtv\\\'"]|\\[0-7]{1,3}|\\x[0-9a-fA-F]{1,2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8}|[^\\\'\n])\''
-    t.value = t.value[1:-1]  # Strip the single quotes
     return t
 
 def t_PLUS(t):
@@ -164,21 +136,57 @@ def t_UMINUS(t):
     r'-'
     return t
 
-# characters to ignore as whitespace
+def t_VAR(t):
+    r'var'
+    return t
+
+# noinspection PyPep8Naming
+# noinspection PySingleQuotedDocstring
+def t_NUMBER(t):
+    r'[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?'  # 2024-02-14, DMW, we'll save floating point for later
+    # https://www.regular-expressions.info/floatingpoint.html
+    # r'\d+'  # original regular expression -- allow integers only
+
+    t.value = string_to_number(t.value) # int(t.value)
+
+    return t
+
+
+# See section 4.5 - https://www.dabeaz.com/ply/ply.html - Lexer rules for ignoring text for tokenization
+# noinspection PyPep8Naming
+def t_COMMENT(t):
+    r'\#.*'
+    pass
+    # No return value. Token discarded
+
+
+# See sections 4.6, 4.7 - https://www.dabeaz.com/ply/ply.html
+# characters to ignore as whitespace, space, tab, vertical tab, form feed
 t_ignore = " \t\v\f"
+
 
 # noinspection PySingleQuotedDocstring
 def t_newline(t):
-   r'\n+'
-   t.lexer.lineno += t.value.count("\n")
+    r'\n+'
+    t.lexer.lineno += t.value.count("\n")
 
+
+# Compute column.
+#     input is the input text string
+#     token is a token instance
+def find_column(input_text, token):
+    line_start = input_text.rfind('\n', 0, token.lexpos) + 1
+    return (token.lexpos - line_start) + 1
+
+
+# See sections 4.9 - Error Handling - https://www.dabeaz.com/ply/ply.html
 def t_error(t):
-   print("Illegal character '%s'" % t.value[0])
-   t.lexer.skip(1)
+    print("Illegal character '%s'" % t.value[0])
+    t.lexer.skip(1)
 
 # See sections 4.11 - Building and using the lexer - https://www.dabeaz.com/ply/ply.html
 # Build the lexer
-lexer = lex.lex()
+lexer = lex.lex(debug=1)
 
 # ------------------------------------------------ STEP 3: SET UP THE PARSER
 
@@ -212,15 +220,19 @@ def p_STATEMENTS(p):
     if len(p) == 3:
         p[0] = p[1] + [p[2]]
     else:
-        p[0] = [p[1]]
+        p[0] = p[1]
 
 def p_STATEMENT(p):
-    """statement : expression"""
+    """statement : Print
+                | Printf
+                | Println
+                | expression"""
     p[0] = ASTNODE("statement", children=[p[1]])
 
 def p_EXPRESSION(p):
     """
     expression : number
+                | string 
                 | expression PLUS expression
                 | expression MINUS expression
                 | expression TIMES expression
@@ -238,12 +250,37 @@ def p_EXPRESSION(p):
     else:
         p[0] = ASTNODE("expression", children=[p[1]])
 
+def p_GROUP(p):
+    """ 
+    expression : '(' expression ')'
+    """
+    p[0] = p[2]
+
+def p_expression_UMINUS(p):
+    "expression : '-' expression %prec UMINUS"
+    p[0] = -p[2]
+
 # noinspection PyPep8Naming
-def p_NUMBER(p):
+def p_number(p):
     "number : NUMBER"
     p[0] = ASTNODE("number", value=p[1])
     # print(p[1])  # debugging
 
+def p_STRING(p):
+    "string : STRING"
+    p[0] = ASTNODE("string", value=p[1])
+
+def p_PRINT(p):
+    "Print : PRINT '(' expression ')'"
+    p[0] = ASTNODE("print", children=[p[3]])
+
+def p_PRINTLN(p):
+    "Println : PRINTLN '(' expression ')'"
+    p[0] = ASTNODE("print", children=[p[3]])
+
+def p_PRINTF(p):
+    "Printf : PRINTF '(' expression ')'"
+    p[0] = ASTNODE("print", children=[p[3]])
 
 # a p_error(p) rule is required
 def p_error(p):
@@ -253,7 +290,7 @@ def p_error(p):
         print("Syntax error at EOF")
 
 
-parser = yacc.yacc()
+parser = yacc.yacc(debug=1)
 
 # ------------------------------------------------ STEP 4: USE THE PARSER
 
@@ -261,29 +298,58 @@ ast_stack = Stack()
 
 
 def interpret_ast(_node: ASTNODE) -> None:
-   global ast_stack
-   if _node.name == "program":
-       for child in _node.children:
-           interpret_ast(child)
-   elif _node.name == "statement":
-       for child in _node.children:
-           interpret_ast(child)
-   elif _node.name == "print":
-       for child in _node.children:
-           interpret_ast(child)
-       print(ast_stack.pop())
-   elif _node.name == "expression":
-       for child in _node.children:
-           interpret_ast(child)
-   elif _node.name == "number":
-       ast_stack.push(_node.value)
-   else:
-       raise "Unknown node name {}".format(_node.name)
+    global ast_stack
+    if _node.name == "program":
+        for child in _node.children:
+            interpret_ast(child)
+    elif _node.name == "statement":
+        for child in _node.children:
+            interpret_ast(child)
+    elif _node.name == "print":
+        for child in _node.children:
+            interpret_ast(child)
+        print(ast_stack.pop())
+    elif _node.name == "println":
+        print_value = interpret_ast(_node.children[0])
+        print(print_value)
+    elif _node.name == "expression":
+        if _node.operator in ["+", "-", "*", "/", "%"]:
+            left.val = interpret_ast(_node.children[0])
+            right.val = interpret_ast(_node.children[1])
+            if _node.operator == '+':
+                ast_stack.push(left_val + right_val)
+            elif _node.operator == '-':
+                ast_stack.push(left_val - right_val)
+            elif _node.operator == '*':
+                ast_stack.push(left_val * right_val)
+            elif _node.operator == '/':
+                if right_val != 0:
+                    ast_stack.push(left_val / right_val)
+                else:
+                    raise Exception("Division by zero")
+            elif _node.operator == '%':
+                ast_stack.push(left_val % right_val)
+    elif _node.name == "number":
+        ast_stack.push(_node.value)
+    elif _node.name == "string":
+        return _node.value
+    else:
+        raise "Unknown node name {}".format(_node.name)
    
 
 if __name__ == "__main__":
-    source_program = "17"
-    ast = parser.parse(source_program)
+    
+    # Write to console an integer:
+    # prg1 = "17"
+    # yacc.parse(prg1)
 
-    print(program)
+    # Write to console a string:
+
+    prg2 = "Println(\"Hello, World!\")"
+    yacc.parse(prg2, debug=1)
+
+    # While/for loops:
+    # loop = "for i < 10 { fmt.Println("Number: ", i) i++}"
+
     ASTNODE.render_tree(program)
+    quit(0)
