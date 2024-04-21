@@ -24,32 +24,51 @@ from Common import Common           # a useful class and method for getting the 
 from ReadFile import ReadFile       # a simple but a useful read file class
 from Stack import Stack             # a simple stack class
 
+import sys
+import math 
+from anytree import Node, RenderTree
+
+sys.path.insert(0, "../..")
+
 # ------------------------------------------------ STEP 2: SET UP LEXER
 
 reserved = {
     "if" : "IF",
     "else" : "ELSE",
     "for" : "FOR",
-    "Print" : "PRINT", # reserved word to print to standard output
     "Println" : "PRINTLN", # reserved word to print to standard output with a newline
     "Printf" : "PRINTF", # reserved word to print to standard output with format
-}
+    "Print" : "PRINT", # reserved word to print to standard output
+    "fmt.Println" : "FMT_PRINTLN", # reserved word to print to standard output with format and a newline
+    "fmt.Printf" : "FMT_PRINTF", # reserved word to print to standard output with format
+    "fmt.Print" : "FMT_PRINT", # reserved word to print to standard output with format
+    'true': 'TRUE',  
+    'false': 'FALSE',  
+    'sin': 'SIN',    
+    'cos': 'COS',   
+    'tan': 'TAN',    
+    'abs': 'ABS', 
+    'min': 'MIN',
+    'max': 'MAX'  
+    }
 
 tokens = [
-    'STRING', # Interpreted string literals are character sequences between double quotes, as in "bar". Within the quotes, any character may appear except newline and unescaped double quote. 
+    'SQ_STRING', # single quoted string
+    'DQ_STRING', # double quoted string
     'NUMBER', # number literals
+    'NAME', # identifiers
     'PLUS', # binary operator expression PLUS
     'MINUS', # binary operator expression MINUS
     'TIMES', # binary operator expression TIMES
     'DIVIDE', # binary operator expression DIVIDE
     'MOD', # # binary operator expression MOD
-    'LT', 'LE', 'EQ', 'NEQ', 'GE', 'GT', 'UMINUS'
+    'LT', 'LE', 'EQ', 'NEQ', 'GE', 'GT', 'UMINUS' # PEMAS operators
 ]
 
 tokens += list(reserved.values())
 
 literals = ["(", ")", "+", "-", "*", "/", "%", "=",
-            ";", "{", "}", "<", ">"] 
+            ";", "{", "}", "<", ">", ","] 
 
 # helper function create a Python int or float as needed
 def string_to_number(s):
@@ -62,10 +81,6 @@ def string_to_number(s):
 
 # DEFINE TOKENS PATTERNS
 
-def t_PRINT(t):
-    r'Print'
-    return t
-
 def t_PRINTLN(t):
     r'Println'
     return t
@@ -73,6 +88,26 @@ def t_PRINTLN(t):
 def t_PRINTF(t):
     r'Printf'
     return t 
+
+def t_PRINT(t):
+    r'Print'
+    return t
+
+def t_FMT_PRINTLN(t):
+    r'fmt\.Println'
+    return t
+
+def t_FMT_PRINTF(t):
+    r'fmt\.Printf'
+    return t
+
+def t_FMT_PRINT(t):
+    r'fmt\.Print'
+    return t
+
+def t_FOR(t):
+    r'for'
+    return t
 
 # floating points literals:
 
@@ -83,10 +118,16 @@ def t_FLOAT(t):
 
 # string literals:
 
-def t_STRING(t):
-    r'"(\\.|[^\\"])*"'
-    t.value = t.value[1:-1] # remove the double quotes
-    return t
+# single quoted string:
+def t_SQ_STRING(t):
+   r"'[^'\\]*(?:\\.[^'\\]*)*'"
+   return t
+
+# double quoted string:
+def t_DQ_STRING(t):
+   # noinspection PySingleQuotedDocstring
+   r'"[^"\\]*(?:\\.[^"\\]*)*"'
+   return t
 
 def t_PLUS(t):
     r'\+'
@@ -140,6 +181,46 @@ def t_VAR(t):
     r'var'
     return t
 
+def t_IF(t):
+    r'if'
+    return t
+
+def t_ELSE(t):
+    r'else'
+    return t 
+
+def t_TRUE(t):  
+    r'true'
+    return t
+
+def t_FALSE(t):
+    r'false'
+    return t
+
+def t_SIN(t):
+    r'sin'
+    return t
+
+def t_COS(t):
+    r'cos'
+    return t
+
+def t_TAN(t):
+    r'tan'
+    return t
+
+def t_ABS(t):
+    r'abs'
+    return t
+
+def t_MIN(t):
+    r'min'
+    return t
+
+def t_MAX(t):
+    r'max'
+    return t
+
 # noinspection PyPep8Naming
 # noinspection PySingleQuotedDocstring
 def t_NUMBER(t):
@@ -151,6 +232,11 @@ def t_NUMBER(t):
 
     return t
 
+# name identifiers:
+def t_NAME(t):
+    r'[a-zA-Z_][a-zA-Z0-9_]*'
+    t.type = reserved.get(t.value, 'NAME')    # Check for reserved words
+    return t
 
 # See section 4.5 - https://www.dabeaz.com/ply/ply.html - Lexer rules for ignoring text for tokenization
 # noinspection PyPep8Naming
@@ -186,7 +272,7 @@ def t_error(t):
 
 # See sections 4.11 - Building and using the lexer - https://www.dabeaz.com/ply/ply.html
 # Build the lexer
-lexer = lex.lex(debug=1)
+lexer = lex.lex(debug=0)
 
 # ------------------------------------------------ STEP 3: SET UP THE PARSER
 
@@ -208,31 +294,66 @@ start = "program"  # set the start production, even though the first production 
 # noinspection PyPep8Naming
 # noinspection PySingleQuotedDocstring
 def p_PROGRAM(p):
-    "program : statements"
+    "program : statement_list"
     global program
     program = ASTNODE("program", children=[p[1]])
 
 def p_STATEMENTS(p):
     """
-    statements : statements statement 
+    statement_list : statement_list statement 
                 | statement
     """
     if len(p) == 3:
-        p[0] = p[1] + [p[2]]
+        # p[0] = p[1] + [p[2]]
+        p[0] = ASTNODE("statement_list", children=[p[1], p[2]])
     else:
-        p[0] = p[1]
+        # p[0] = [p[1]]
+        p[0] = ASTNODE("statement_list", children=[p[1]])
+    # print("*****************************************************************\n",p[0],"**********************************************")
+    # ASTNODE.render_tree(p[0])
+
+def p_BLOCK_STATEMENT(p):
+    """
+    block_statement : '{' statement_list '}'
+    """
+    p[0] = ASTNODE("block_statement", children=[p[2]])
 
 def p_STATEMENT(p):
-    """statement : Print
-                | Printf
-                | Println
+    """statement : all_prints
+                | assign
+                | if_statement
+                | for
                 | expression"""
     p[0] = ASTNODE("statement", children=[p[1]])
+
+def p_all_prints(p):
+    """
+    all_prints : print
+                | println
+                | printf
+                | fmt_print
+                | fmt_println
+                | fmt_printf
+    """
+    p[0] = p[1]
+
+def p_if_statement(p):
+    """
+    if_statement : IF assign block_statement ELSE block_statement
+    """
+    p[0] = ASTNODE("if_statement", children=[p[2], p[3], p[5]])
+
+def p_for(p):
+    """
+    for : FOR assign block_statement
+    """
+    p[0] = ASTNODE("for", children=[p[2], p[3]])
 
 def p_EXPRESSION(p):
     """
     expression : number
-                | string 
+                | name  
+                | assign 
                 | expression PLUS expression
                 | expression MINUS expression
                 | expression TIMES expression
@@ -244,6 +365,7 @@ def p_EXPRESSION(p):
                 | expression NEQ expression
                 | expression GE expression
                 | expression GT expression
+                | expression ',' expression
     """
     if len(p) == 4:
         p[0] = ASTNODE("expression", children=[p[1], p[3]])
@@ -260,27 +382,83 @@ def p_expression_UMINUS(p):
     "expression : '-' expression %prec UMINUS"
     p[0] = -p[2]
 
-# noinspection PyPep8Naming
 def p_number(p):
     "number : NUMBER"
     p[0] = ASTNODE("number", value=p[1])
-    # print(p[1])  # debugging
+
+def p_NAME(p):
+    "name : NAME"
+    p[0] = ASTNODE('name', value=p[1])
+
+def p_ASSIGN(p):
+    """ 
+    assign : name '=' expression
+            | name GT expression
+            | name LT expression
+    """
+    p[0] = ASTNODE("assign", value=p[2], children=[p[1], p[3]])
 
 def p_STRING(p):
-    "string : STRING"
-    p[0] = ASTNODE("string", value=p[1])
+    """expression : string"""
+    p[0] = p[1]
+
+def p_EXPRESSION_STRINGS(p):
+   """string : SQ_STRING
+             | DQ_STRING
+   """
+   p[0] = ASTNODE("expression", value=p[1])
+
+# PRINT STATEMENTS:
 
 def p_PRINT(p):
-    "Print : PRINT '(' expression ')'"
+    "print : PRINT '(' expression ')'"
     p[0] = ASTNODE("print", children=[p[3]])
 
 def p_PRINTLN(p):
-    "Println : PRINTLN '(' expression ')'"
+    "println : PRINTLN '(' expression ')'"
     p[0] = ASTNODE("print", children=[p[3]])
 
 def p_PRINTF(p):
-    "Printf : PRINTF '(' expression ')'"
+    "printf : PRINTF '(' expression ')'"
     p[0] = ASTNODE("print", children=[p[3]])
+
+def p_FMT_PRINT(p):
+    "fmt_print : FMT_PRINT '(' expression ')'"
+    p[0] = ASTNODE("print", children=[p[3]])
+
+def p_FMT_PRINTLN(p):
+    "fmt_println : FMT_PRINTLN '(' expression ')'"
+    p[0] = ASTNODE("print", children=[p[3]])
+
+def p_FMT_PRINTF(p):
+    "fmt_printf : FMT_PRINTF '(' expression ')'"
+    p[0] = ASTNODE("print", children=p[3])
+
+# Intrinsic functions
+
+def p_ABS(p):
+    "expression : ABS '(' expression ')'"
+    p[0] = math.abs(p[3])
+
+def p_SIN(p):
+    "expression : SIN '(' expression ')'"
+    p[0] = math.sin(p[3])
+
+def p_COS(p):
+    "expression : COS '(' expression ')'"
+    p[0] = math.cos(p[3])
+
+def p_TAN(p):
+    "expression : TAN '(' expression ')'"
+    p[0] = math.tan(p[3])
+
+def p_MIN(p):
+    "expression : MIN '(' expression ',' expression ')'"
+    p[0] = math.min(p[3], p[5])
+
+def p_MAX(p):
+    "expression : MAX '(' expression ',' expression ')'"
+    p[0] = math.max(p[3], p[5])
 
 # a p_error(p) rule is required
 def p_error(p):
@@ -290,7 +468,7 @@ def p_error(p):
         print("Syntax error at EOF")
 
 
-parser = yacc.yacc(debug=1)
+parser = yacc.yacc()
 
 # ------------------------------------------------ STEP 4: USE THE PARSER
 
@@ -309,30 +487,13 @@ def interpret_ast(_node: ASTNODE) -> None:
         for child in _node.children:
             interpret_ast(child)
         print(ast_stack.pop())
-    elif _node.name == "println":
-        print_value = interpret_ast(_node.children[0])
-        print(print_value)
     elif _node.name == "expression":
-        if _node.operator in ["+", "-", "*", "/", "%"]:
-            left.val = interpret_ast(_node.children[0])
-            right.val = interpret_ast(_node.children[1])
-            if _node.operator == '+':
-                ast_stack.push(left_val + right_val)
-            elif _node.operator == '-':
-                ast_stack.push(left_val - right_val)
-            elif _node.operator == '*':
-                ast_stack.push(left_val * right_val)
-            elif _node.operator == '/':
-                if right_val != 0:
-                    ast_stack.push(left_val / right_val)
-                else:
-                    raise Exception("Division by zero")
-            elif _node.operator == '%':
-                ast_stack.push(left_val % right_val)
+        for child in _node.children:
+            interpret_ast(child)
     elif _node.name == "number":
         ast_stack.push(_node.value)
     elif _node.name == "string":
-        return _node.value
+        ast_stack.push(_node.value)
     else:
         raise "Unknown node name {}".format(_node.name)
    
@@ -344,12 +505,23 @@ if __name__ == "__main__":
     # yacc.parse(prg1)
 
     # Write to console a string:
+    # prg2 = "Println(\"Hello, World!\")"
+    # yacc.parse(prg2)
 
-    prg2 = "Println(\"Hello, World!\")"
-    yacc.parse(prg2, debug=1)
+    # if-else support:
+    # prg3 = "if x > 5 { fmt.Println(\"Greater than 5\") } else { fmt.Println(\"Not greater than 5\") }"
+    # yacc.parse(prg3, debug=1)
 
     # While/for loops:
-    # loop = "for i < 10 { fmt.Println("Number: ", i) i++}"
+    # loop = "for i < 10 { fmt.Println(\"Number: \", i) i = i + 1 }"
+    # yacc.parse(loop, debug=0)
 
+    # Intrinsic functions:
+    abs_val = "abs(5)"
+    yacc.parse(abs_val)
+   
+    if program is None:
+        print("No AST")
+   
     ASTNODE.render_tree(program)
     quit(0)

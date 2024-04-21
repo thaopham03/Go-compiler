@@ -80,6 +80,7 @@ class ASTNODE(NodeMixin):
     @staticmethod
     def render_tree(tree) -> None:
         for pre, fill, node in RenderTree(tree):
+            # print(str(node))
             # print("node value={}".format(node.value))
             if node.value is None:
                 node_info = node.name
