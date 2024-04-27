@@ -23,12 +23,8 @@ from ASTNODE import ASTNODE         # simple class for creating nodes for an Abs
 from Common import Common           # a useful class and method for getting the type of an object
 from ReadFile import ReadFile       # a simple but a useful read file class
 from Stack import Stack             # a simple stack class
-
-import sys
-import math 
-from anytree import Node, RenderTree
-
-sys.path.insert(0, "../..")
+from SymbolTable import *
+from MIPS32_Emitter import *
 
 # ------------------------------------------------ STEP 2: SET UP LEXER
 
@@ -49,7 +45,7 @@ reserved = {
     'tan': 'TAN',    
     'abs': 'ABS', 
     'min': 'MIN',
-    'max': 'MAX'  
+    'max': 'MAX',  
     }
 
 tokens = [
@@ -236,6 +232,13 @@ def t_NUMBER(t):
 def t_NAME(t):
     r'[a-zA-Z_][a-zA-Z0-9_]*'
     t.type = reserved.get(t.value, 'NAME')    # Check for reserved words
+
+    # Check or add to symbol table:
+    if t.type == 'NAME':
+        symbol = SymbolTable.lookup(t.value)
+        if not symbol:
+            SymbolTable.add(t.value, 'identifier')
+
     return t
 
 # See section 4.5 - https://www.dabeaz.com/ply/ply.html - Lexer rules for ignoring text for tokenization
@@ -309,14 +312,15 @@ def p_STATEMENTS(p):
     else:
         # p[0] = [p[1]]
         p[0] = ASTNODE("statement_list", children=[p[1]])
-    # print("*****************************************************************\n",p[0],"**********************************************")
     # ASTNODE.render_tree(p[0])
 
 def p_BLOCK_STATEMENT(p):
     """
     block_statement : '{' statement_list '}'
     """
+    SymbolTable.enter_scope()
     p[0] = ASTNODE("block_statement", children=[p[2]])
+    SymbolTable.exit_scope()
 
 def p_STATEMENT(p):
     """statement : all_prints
@@ -438,27 +442,27 @@ def p_FMT_PRINTF(p):
 
 def p_ABS(p):
     "expression : ABS '(' expression ')'"
-    p[0] = math.abs(p[3])
+    p[0] = ASTNODE("expression", children=[p[3]])
 
 def p_SIN(p):
     "expression : SIN '(' expression ')'"
-    p[0] = math.sin(p[3])
+    p[0] = ASTNODE("expression", children=[p[3]])
 
 def p_COS(p):
     "expression : COS '(' expression ')'"
-    p[0] = math.cos(p[3])
+    p[0] = ASTNODE("expression", children=[p[3]])
 
 def p_TAN(p):
     "expression : TAN '(' expression ')'"
-    p[0] = math.tan(p[3])
+    p[0] = ASTNODE("expression", children=[p[3]])
 
 def p_MIN(p):
     "expression : MIN '(' expression ',' expression ')'"
-    p[0] = math.min(p[3], p[5])
+    p[0] = ASTNODE("expression", children=[p[3], p[5]])
 
 def p_MAX(p):
     "expression : MAX '(' expression ',' expression ')'"
-    p[0] = math.max(p[3], p[5])
+    p[0] = ASTNODE("expression", children=[p[3], p[5]])
 
 # a p_error(p) rule is required
 def p_error(p):
@@ -517,11 +521,16 @@ if __name__ == "__main__":
     # yacc.parse(loop, debug=0)
 
     # Intrinsic functions:
-    abs_val = "abs(5)"
-    yacc.parse(abs_val)
+    # min = "sin(7)"
+    # yacc.parse(min, debug=1)
+
+    prg4 = "Println(17)"
+    yacc.parse(prg4)
    
     if program is None:
         print("No AST")
    
     ASTNODE.render_tree(program)
+    program.value = {"name" : "Test Program"}
+    MIPS32Emitter(program).emit_ast()
     quit(0)
