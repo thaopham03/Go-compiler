@@ -14,83 +14,63 @@ from ASTNODE import ASTNODE
 import datetime as dt 
 
 class MIPS32Emitter:
-    def __init__(self, source_ast: ASTNODE = None, target_file: str = ""):
-        self.source_ast = source_ast
-        self.target_file = target_file
-        self.output_asm = None
-        self.exit_status = 0
-        self.start_compile = None
-        self.end_compile = None
-        self.elapsed_compile = None 
-
-    def set_source_ast(self, source_ast: ASTNODE = None):
-        self.source_ast = source_ast
-    
-    def set_target_file(self, target_file: str = "") -> None:
-        self.target_file = target_file
-    
-    def emit_preamble(self, program_name: str = "NONE") -> None:
-        self.start_compile = dt.datetime.now()
-        self.output_asm = "# PROGRAM: " + program_name + "\n# Compile Start: {}".format(self.start_compile) + "\n.text\n"
-        # 2024-03-27, DMW, updated emitter final output to compute elapsed compilation time
-    
-    def emit_postamble(self) -> None:
-        # 2024-04-15, DMW, TODO: here is where we output external functions we're going to include
-        # self.emit_asm(".include ipow.asm")  # 2024-04-15, DMW,
-        self.end_compile = dt.datetime.now()
-        self.elapsed_compile = self.end_compile - self.start_compile
-        self.output_asm += "li $a0, {}\n".format(self.exit_status) + "li $v0, 17\n" + "syscall\n\n"
-        self.output_asm += "# Compile End Time: {}\n".format(self.end_compile)
-        self.output_asm += "# Compile Elapsed Time: {}\n\n".format(self.elapsed_compile)
-
-    def emit_asm(self, asm_text: str) -> None:
-        self.output_asm += asm_text + "\n"
-
-    def emit_ast(self) -> None:
-        if self.source_ast is None:
-            print("No Abstract Syntax Tree provided.")
-            return
-        
-        # self.emit_preamble()  # 2024-03-27, DMW, moved to emitter
-        self.emitter(self.source_ast)
-        self.emit_postamble()
-
-    def emitter(self, _node: ASTNODE) -> None:
-        # print(_node)  # 2024-04-13, DMW, good old-fashioned and simple debugging
-        if _node is None:
-            return
-
-        def process_children(_node):
+    def emit_ast(self, _node):
+        if _node.name in ["program", "block_statement", "statements"]:
             for child in _node.children:
-                self.emitter(child)
-
-        if _node.name == "program":  # 2024-03-27, DMW, handle start of program
-            self.emit_preamble(_node.value['name'])  # 2024-04-13, DMW, TODO: handle program name in emitter
-            # self.emit_asm("# {}".format(_node.value['name']))
-            process_children(_node)
-
-        elif _node.name in ["statement_list", "block_statement"]:
-            process_children(_node)
-
+                self.emit_ast(child)
+        elif _node.name == "statement_list":
+            for child in _node.children:
+                self.emit_ast(child)
+        elif _node.name == "statement":
+            for child in _node.children:
+                self.emit_ast(child)
         elif _node.name == "print":
-            process_children(_node)
-            self.emit_asm("li $a0, 17")
-            self.emit_asm("li $v0, 1")
-            self.emit_asm("syscall")
-            self.emit_asm("li $a0, 0x0A")
-            self.emit_asm("li $v0, 11")
-            self.emit_asm("syscall")
-            self.emit_asm("li $v0, 10")
-            self.emit_asm("syscall")
-            
+            for child in _node.children:
+                self.emit_ast(child)
+            # print(ast_stack.pop())
+            print("lw $a0, 4($sp)")  # 2024-02-14, DMW, my emitter was missing this line of assembly!
+            print("addi $sp, $sp, 4")
+            print("li $v0, 1")
+            print("syscall")
+            print("li $a0, 10")
+            print("li $v0, 11")
+            print("syscall")
+        elif _node.name == "assign":
+            self.emit_ast(_node.children[1])  # evaluate the expression and place result on stack
+            var_address = f"{_node.children[0].value}_000000"  # assuming variable naming follows a convention
+            print("lw $t0, 4($sp)")  # load the result of the expression
+            print("sw $t0, " + var_address)  # store it in the variable's address
+            print("addi $sp, $sp, 4")  # adjust stack pointer
         elif _node.name == "expression":
-            self.emit_asm("# expression")
-            if len(_node.children) == 0:  # 2024-04-13, DMW, no children means immediate value
-                self.emit_asm("li $t0, {}".format(_node.value['value'][0]))
-                self.emit_asm("addi $sp, $sp, -4")
-                self.emit_asm("sw $t0, 4($sp)")
-        
-        elif _node.name == "name": 
-            self.emit_asm("# name")
+            if len(_node.children) == 1:
+                self.emit_ast(_node.children[0])
+            else:
+                for child in _node.children:
+                    self.emit_ast(child)
+                    if len(_node.children) == 3:
+                        print("lw $t0, 8($sp)")  # get the previously saved LHS value off the stack
+                        print("lw $t1, 4($sp)")  # get the previously saved RHS value off the stack
+                        if _node.value == "+":
+                            print("add $t0, $t0, $t1")  # add the values: $t0 = $t0 + $t1
+                        elif _node.value == "-":
+                            self.emit_ast("sub $t0, $t0, $t1")
+                        elif _node.value == "*":
+                            self.emit_asm("mul $t0, $t0, $t1")
+                    #fix this for other binop
+                    print("addi $sp, $sp, 4")  # deallocate space where $t1 was saved on the stack
+                    print("sw $t0, 4($sp)")
+                else:
+                    print("li, $t0, {}".format(_node.value[0]))
+                    # allocate then push - for current output
+                    print("addi $sp, $sp, -4")  # Decrease stack pointer to allocate 4 bytes
+                    print("sw $t0, 0($sp)")  # Store the value at the new top of the stack
+        elif _node.name == "number":
+            print(f"li $t0, {_node.value[0]}")  # load immediate number
+            print("addi $sp, $sp, -4")  # adjust stack
+            print("sw $t0, 4($sp)")  # push onto stack
+        elif _node.name == "for":
+            pass
+        elif _node.name == "name":
+            pass
         else:
-            pass  # 2024-04-13, DMW, TODO: This should cause a syntax error
+            raise Exception("Unknown node name {}".format(_node.name))

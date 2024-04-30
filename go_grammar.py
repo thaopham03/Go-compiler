@@ -23,7 +23,6 @@ from ASTNODE import ASTNODE         # simple class for creating nodes for an Abs
 from Common import Common           # a useful class and method for getting the type of an object
 from ReadFile import ReadFile       # a simple but a useful read file class
 from Stack import Stack             # a simple stack class
-from SymbolTable import *
 from MIPS32_Emitter import *
 
 # ------------------------------------------------ STEP 2: SET UP LEXER
@@ -45,7 +44,8 @@ reserved = {
     'tan': 'TAN',    
     'abs': 'ABS', 
     'min': 'MIN',
-    'max': 'MAX',  
+    'max': 'MAX',
+    'var': 'VAR' 
     }
 
 tokens = [
@@ -77,41 +77,6 @@ def string_to_number(s):
 
 # DEFINE TOKENS PATTERNS
 
-def t_PRINTLN(t):
-    r'Println'
-    return t
-
-def t_PRINTF(t):
-    r'Printf'
-    return t 
-
-def t_PRINT(t):
-    r'Print'
-    return t
-
-def t_FMT_PRINTLN(t):
-    r'fmt\.Println'
-    return t
-
-def t_FMT_PRINTF(t):
-    r'fmt\.Printf'
-    return t
-
-def t_FMT_PRINT(t):
-    r'fmt\.Print'
-    return t
-
-def t_FOR(t):
-    r'for'
-    return t
-
-# floating points literals:
-
-def t_FLOAT(t):
-    r'\d+\.\d+'
-    t.value = float(t.value)
-    return t
-
 # string literals:
 
 # single quoted string:
@@ -125,60 +90,32 @@ def t_DQ_STRING(t):
    r'"[^"\\]*(?:\\.[^"\\]*)*"'
    return t
 
-def t_PLUS(t):
-    r'\+'
+def t_FMT_PRINTLN(t):
+    r'fmt\.Println'
     return t
 
-def t_MINUS(t):
-    r'\-'
+def t_FMT_PRINTF(t):
+    r'fmt\.Printf'
     return t
 
-def t_TIMES(t):
-    r'\*'
+def t_FMT_PRINT(t):
+    r'fmt\.Print'
     return t
 
-def t_DIVIDE(t):
-    r'/'
+def t_PRINTLN(t):
+    r'Println'
     return t
 
-def t_MOD(t):
-    r'%'
+def t_PRINTF(t):
+    r'Printf'
+    return t 
+
+def t_PRINT(t):
+    r'Print'
     return t
 
-def t_LT(t):
-    r'<'
-    return t
-
-def t_LE(t):
-    r'<='
-    return t
-
-def t_EQ(t):
-    r'=='
-    return t
-
-def t_NEQ(t):
-    r'!='
-    return t
-
-def t_GE(t):
-    r'>='
-    return t
-
-def t_GT(t):
-    r'>'
-    return t
-
-def t_UMINUS(t):
-    r'-'
-    return t
-
-def t_VAR(t):
-    r'var'
-    return t
-
-def t_IF(t):
-    r'if'
+def t_FALSE(t):
+    r'false'
     return t
 
 def t_ELSE(t):
@@ -189,8 +126,12 @@ def t_TRUE(t):
     r'true'
     return t
 
-def t_FALSE(t):
-    r'false'
+def t_FOR(t):
+    r'for'
+    return t
+
+def t_VAR(t):
+    r'var'
     return t
 
 def t_SIN(t):
@@ -217,6 +158,58 @@ def t_MAX(t):
     r'max'
     return t
 
+def t_IF(t):
+    r'if'
+    return t
+
+def t_PLUS(t):
+    r'\+'
+    return t
+
+def t_MINUS(t):
+    r'\-'
+    return t
+
+def t_TIMES(t):
+    r'\*'
+    return t
+
+def t_LE(t):
+    r'<='
+    return t
+
+def t_EQ(t):
+    r'=='
+    return t
+
+def t_NEQ(t):
+    r'!='
+    return t
+
+def t_GE(t):
+    r'>='
+    return t
+
+def t_LT(t):
+    r'<'
+    return t
+
+def t_DIVIDE(t):
+    r'/'
+    return t
+
+def t_MOD(t):
+    r'%'
+    return t
+
+def t_GT(t):
+    r'>'
+    return t
+
+def t_UMINUS(t):
+    r'-'
+    return t
+
 # noinspection PyPep8Naming
 # noinspection PySingleQuotedDocstring
 def t_NUMBER(t):
@@ -232,13 +225,6 @@ def t_NUMBER(t):
 def t_NAME(t):
     r'[a-zA-Z_][a-zA-Z0-9_]*'
     t.type = reserved.get(t.value, 'NAME')    # Check for reserved words
-
-    # Check or add to symbol table:
-    if t.type == 'NAME':
-        symbol = SymbolTable.lookup(t.value)
-        if not symbol:
-            SymbolTable.add(t.value, 'identifier')
-
     return t
 
 # See section 4.5 - https://www.dabeaz.com/ply/ply.html - Lexer rules for ignoring text for tokenization
@@ -283,6 +269,8 @@ lexer = lex.lex(debug=0)
 # noinspection SpellCheckingInspection
 
 precedence = (
+    ('nonassoc', 'IF'),
+    ('nonassoc', 'ELSE'),
     ('left', 'LT', 'LE', 'EQ', 'NEQ', 'GE', 'GT'),
     ('left', 'PLUS', 'MINUS'),
     ('left', 'TIMES', 'DIVIDE', 'MOD'),
@@ -318,13 +306,11 @@ def p_BLOCK_STATEMENT(p):
     """
     block_statement : '{' statement_list '}'
     """
-    SymbolTable.enter_scope()
     p[0] = ASTNODE("block_statement", children=[p[2]])
-    SymbolTable.exit_scope()
 
 def p_STATEMENT(p):
     """statement : all_prints
-                | assign
+                | assign 
                 | if_statement
                 | for
                 | expression"""
@@ -344,14 +330,22 @@ def p_all_prints(p):
 def p_if_statement(p):
     """
     if_statement : IF assign block_statement ELSE block_statement
+                 | IF assign block_statement 
     """
-    p[0] = ASTNODE("if_statement", children=[p[2], p[3], p[5]])
+    if len(p) == 6:
+        p[0] = ASTNODE("if_statement", children=[p[2], p[3], p[5]])
+    else:
+        p[0] = ASTNODE("if_statement", children=[p[2], p[3]])
 
 def p_for(p):
     """
     for : FOR assign block_statement
+        | FOR assign ';' expression ';' statement block_statement
     """
-    p[0] = ASTNODE("for", children=[p[2], p[3]])
+    if len(p) == 4:
+        p[0] = ASTNODE("for", children=[p[2], p[3]])
+    else: 
+        p[0] = ASTNODE("for", children=[p[2], p[4], p[6], p[7]])
 
 def p_EXPRESSION(p):
     """
@@ -397,10 +391,16 @@ def p_NAME(p):
 def p_ASSIGN(p):
     """ 
     assign : name '=' expression
+            | VAR name '=' expression
             | name GT expression
             | name LT expression
+            | name LE expression
+            | name EQ expression
     """
-    p[0] = ASTNODE("assign", value=p[2], children=[p[1], p[3]])
+    if len(p) == 4:
+        p[0] = ASTNODE("assign", value=p[2], children=[p[1], p[3]])
+    else:
+        p[0] = ASTNODE("assign", value=p[3], children=[p[2], p[4]])
 
 def p_STRING(p):
     """expression : string"""
@@ -503,6 +503,17 @@ def interpret_ast(_node: ASTNODE) -> None:
    
 
 if __name__ == "__main__":
+
+    def show_tokenization(source: str) -> None:
+        # Give the lexer some input
+        lexer.input(source)
+
+        # Tokenize
+        while True:
+            tok = lexer.token()
+            if not tok:
+                break  # No more input
+            print(tok)
     
     # Write to console an integer:
     # prg1 = "17"
@@ -524,13 +535,45 @@ if __name__ == "__main__":
     # min = "sin(7)"
     # yacc.parse(min, debug=1)
 
-    prg4 = "Println(17)"
-    yacc.parse(prg4)
+    prg5 = """var x = 5  
+    var ans = 1
+    for x > 1 {
+        ans = ans * x
+        x = x - 1
+    }   
+    fmt.Println(ans)
+    """
+    yacc.parse(prg5, debug=0)
+
+    # prg6 = """var n = 10
+    # if n <= 0 {fmt.Println(0)} else {
+    #     var previous = 0
+    #     var current = 1
+    # } if n == 1 {fmt.Println(1)} else {
+	#     for var i = 2; i <= n; i = i + 1 {
+    #         var next = previous + current
+    #         previous = current
+    #         current = next
+	#     }
+	#     fmt.Println(current)
+    # }
+    # """
+    # show_tokenization(prg6)
+    # yacc.parse(prg6, debug=1)
+    # program.value = {"name" : "Test Program"}
+
+
+    # source_code = "18+17"
+    # yacc.parse(source_code, debug=0)
    
     if program is None:
         print("No AST")
    
     ASTNODE.render_tree(program)
-    program.value = {"name" : "Test Program"}
-    MIPS32Emitter(program).emit_ast()
+    emitter = MIPS32Emitter()
+    print(".data")
+    print("x_00000:    .word 0")
+    print("ans_00000:  .word 0")
+    print(".text")
+    emitter.emit_ast(program)
     quit(0)
